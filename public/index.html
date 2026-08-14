@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Wavelength</title>
+<script>
+  (function () {
+    var saved = localStorage.getItem('wavelength-theme');
+    if (saved) document.documentElement.setAttribute('data-theme', saved);
+  })();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -15,6 +21,7 @@
     <form id="search-form" class="search-form">
       <input id="search-input" type="search" placeholder="Search tracks or artists" autocomplete="off">
     </form>
+    <div id="theme-picker" class="theme-picker"></div>
     <nav id="nav-auth" class="nav-auth"></nav>
   </header>
 
@@ -30,9 +37,21 @@
     </div>
 
     <div class="player-controls">
+      <button id="player-shuffle" class="player-btn player-btn--toggle" aria-label="Shuffle" title="Shuffle">
+        <svg viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
+      </button>
+      <button id="player-prev" class="player-btn" aria-label="Previous" disabled>
+        <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+      </button>
       <button id="player-playpause" class="player-btn player-btn--main" aria-label="Play">
         <svg id="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
         <svg id="icon-pause" viewBox="0 0 24 24" class="hidden"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+      </button>
+      <button id="player-next" class="player-btn" aria-label="Next" disabled>
+        <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6h2v12h-2z"/></svg>
+      </button>
+      <button id="player-repeat" class="player-btn player-btn--toggle" aria-label="Repeat" title="Repeat">
+        <svg viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>
       </button>
       <div class="player-scrub">
         <span id="player-time-current" class="player-time">0:00</span>

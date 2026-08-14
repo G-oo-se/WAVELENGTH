@@ -6,6 +6,7 @@ const fs = require('fs');
 const authRoutes = require('./routes/auth');
 const trackRoutes = require('./routes/tracks');
 const userRoutes = require('./routes/users');
+const playlistRoutes = require('./routes/playlists');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -34,6 +35,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api/auth', authRoutes);
 app.use('/api/tracks', trackRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/playlists', playlistRoutes);
 
 // Anything that isn't an API call or an uploaded file falls through to the
 // SPA shell, so client-side routes like #/profile/alex survive a refresh.

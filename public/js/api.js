@@ -25,10 +25,29 @@ export const api = {
     const qs = new URLSearchParams(cleaned).toString();
     return request('GET', `/api/tracks${qs ? `?${qs}` : ''}`);
   },
+  getLikedTracks: () => request('GET', '/api/tracks/liked'),
   getTrack: (id) => request('GET', `/api/tracks/${id}`),
   uploadTrack: (formData) => request('POST', '/api/tracks', formData, true),
   markPlayed: (id) => request('POST', `/api/tracks/${id}/play`),
+  likeTrack: (id) => request('POST', `/api/tracks/${id}/like`),
+  unlikeTrack: (id) => request('DELETE', `/api/tracks/${id}/like`),
+  deleteTrack: (id) => request('DELETE', `/api/tracks/${id}`),
+
   getUser: (username) => request('GET', `/api/users/${username}`),
+  updateProfile: (formData) => request('POST', '/api/users/me', formData, true),
+  getFriends: () => request('GET', '/api/users/me/friends'),
+  sendFriendRequest: (username) => request('POST', `/api/users/${username}/friend-request`),
+  acceptFriendRequest: (username) => request('POST', `/api/users/${username}/friend-accept`),
+  removeFriend: (username) => request('DELETE', `/api/users/${username}/friend`),
+
+  getPlaylists: () => request('GET', '/api/playlists'),
+  createPlaylist: (name) => request('POST', '/api/playlists', { name }),
+  getPlaylist: (id) => request('GET', `/api/playlists/${id}`),
+  renamePlaylist: (id, name) => request('PATCH', `/api/playlists/${id}`, { name }),
+  deletePlaylist: (id) => request('DELETE', `/api/playlists/${id}`),
+  addTrackToPlaylist: (playlistId, trackId) => request('POST', `/api/playlists/${playlistId}/tracks`, { track_id: trackId }),
+  removeTrackFromPlaylist: (playlistId, trackId) => request('DELETE', `/api/playlists/${playlistId}/tracks/${trackId}`),
+
   register: (payload) => request('POST', '/api/auth/register', payload),
   login: (payload) => request('POST', '/api/auth/login', payload),
   logout: () => request('POST', '/api/auth/logout'),

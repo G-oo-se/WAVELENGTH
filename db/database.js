@@ -2,13 +2,6 @@ const path = require('path');
 const fs = require('fs');
 const { DatabaseSync } = require('node:sqlite');
 
-// The database lives in /data as a single file. SQLite needs nothing else
-// installed or running — it's just a file on disk. This uses Node's own
-// built-in SQLite support (bundled since Node 22.5+) instead of a native
-// addon, so there is nothing here that ever needs a C++ compiler on your
-// machine, on Windows or otherwise. Node may print a one-line
-// "ExperimentalWarning: SQLite" notice on startup — that's expected and
-// harmless, not an error.
 const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
@@ -23,6 +16,8 @@ db.exec(`
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     bio TEXT DEFAULT '',
+    avatar_path TEXT,
+    is_admin INTEGER NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -39,6 +34,48 @@ db.exec(`
     play_count INTEGER DEFAULT 0,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS likes (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, track_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS playlists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS playlist_tracks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+    track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL DEFAULT 0,
+    added_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (playlist_id, track_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS friendships (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    requester_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    addressee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted')),
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (requester_id, addressee_id)
+  );
 `);
+
+// Lightweight migrations for anyone who already has a database file from an
+// earlier version of this project.
+const userColumns = db.prepare('PRAGMA table_info(users)').all();
+if (!userColumns.some((col) => col.name === 'is_admin')) {
+  db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
+}
+if (!userColumns.some((col) => col.name === 'avatar_path')) {
+  db.exec('ALTER TABLE users ADD COLUMN avatar_path TEXT');
+}
 
 module.exports = db;

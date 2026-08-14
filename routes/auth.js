@@ -57,7 +57,7 @@ router.post('/logout', (req, res) => {
 router.get('/me', (req, res) => {
   if (!req.session.userId) return res.json(null);
   const user = db
-    .prepare('SELECT id, username, email, bio, created_at FROM users WHERE id = ?')
+    .prepare('SELECT id, username, email, bio, is_admin, created_at FROM users WHERE id = ?')
     .get(req.session.userId);
   res.json(user || null);
 });

@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db/database');
 const { requireAuth } = require('../middleware/auth');
+const { playlistCoverUpload } = require('../middleware/upload');
 
 const router = express.Router();
 
@@ -9,7 +10,7 @@ function ownsPlaylist(playlistId, userId) {
   return !!row && row.user_id === userId;
 }
 
-// GET /api/playlists — the current user's own playlists, with track counts
+// GET /api/playlists — the current user's own playlists (public + private), with track counts
 router.get('/', requireAuth, (req, res) => {
   const playlists = db
     .prepare(
@@ -24,18 +25,39 @@ router.get('/', requireAuth, (req, res) => {
   res.json(playlists);
 });
 
+// GET /api/playlists/search?q= — public playlists only, matched by name.
+// Registered before /:id so "search" is never treated as a playlist id.
+router.get('/search', (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q) return res.json([]);
+
+  const playlists = db
+    .prepare(
+      `SELECT playlists.*, users.username AS owner_username, COUNT(playlist_tracks.id) AS track_count
+       FROM playlists
+       JOIN users ON users.id = playlists.user_id
+       LEFT JOIN playlist_tracks ON playlist_tracks.playlist_id = playlists.id
+       WHERE playlists.is_public = 1 AND (playlists.name LIKE ? OR playlists.description LIKE ?)
+       GROUP BY playlists.id
+       ORDER BY playlists.created_at DESC
+       LIMIT 20`
+    )
+    .all(`%${q}%`, `%${q}%`);
+  res.json(playlists);
+});
+
 router.post('/', requireAuth, (req, res) => {
-  const { name } = req.body;
+  const { name, is_public } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'Give the playlist a name.' });
   if (name.length > 60) return res.status(400).json({ error: 'Playlist names must be 60 characters or fewer.' });
 
-  const info = db.prepare('INSERT INTO playlists (user_id, name) VALUES (?, ?)').run(req.session.userId, name.trim());
+  const info = db
+    .prepare('INSERT INTO playlists (user_id, name, is_public) VALUES (?, ?, ?)')
+    .run(req.session.userId, name.trim(), is_public ? 1 : 0);
   const playlist = db.prepare('SELECT * FROM playlists WHERE id = ?').get(info.lastInsertRowid);
   res.status(201).json({ ...playlist, track_count: 0 });
 });
 
-// Playlists are publicly viewable (like the rest of the site) — only
-// mutating one requires ownership, checked per-route below.
 router.get('/:id', (req, res) => {
   const playlist = db
     .prepare(
@@ -45,6 +67,12 @@ router.get('/:id', (req, res) => {
     )
     .get(req.params.id);
   if (!playlist) return res.status(404).json({ error: 'Playlist not found.' });
+
+  const viewerId = req.session.userId;
+  const isOwner = viewerId === playlist.user_id;
+  if (!playlist.is_public && !isOwner) {
+    return res.status(404).json({ error: 'Playlist not found.' });
+  }
 
   const tracks = db
     .prepare(
@@ -58,10 +86,9 @@ router.get('/:id', (req, res) => {
     )
     .all(req.params.id);
 
-  const viewerId = req.session.userId;
   res.json({
     ...playlist,
-    is_owner: viewerId === playlist.user_id,
+    is_owner: isOwner,
     tracks: tracks.map((t) => ({
       ...t,
       liked_by_me: viewerId ? !!db.prepare('SELECT 1 FROM likes WHERE user_id = ? AND track_id = ?').get(viewerId, t.id) : false
@@ -71,13 +98,36 @@ router.get('/:id', (req, res) => {
 
 router.patch('/:id', requireAuth, (req, res) => {
   if (!ownsPlaylist(req.params.id, req.session.userId)) {
-    return res.status(403).json({ error: 'Only the playlist owner can rename it.' });
+    return res.status(403).json({ error: 'Only the playlist owner can edit it.' });
   }
-  const { name } = req.body;
-  if (!name || !name.trim()) return res.status(400).json({ error: 'Give the playlist a name.' });
+  const { name, description, is_public } = req.body;
 
-  db.prepare('UPDATE playlists SET name = ? WHERE id = ?').run(name.trim(), req.params.id);
-  res.json({ ok: true });
+  if (name !== undefined) {
+    if (!name.trim()) return res.status(400).json({ error: 'Give the playlist a name.' });
+    if (name.length > 60) return res.status(400).json({ error: 'Playlist names must be 60 characters or fewer.' });
+    db.prepare('UPDATE playlists SET name = ? WHERE id = ?').run(name.trim(), req.params.id);
+  }
+  if (description !== undefined) {
+    if (description.length > 500) return res.status(400).json({ error: 'Description must be 500 characters or fewer.' });
+    db.prepare('UPDATE playlists SET description = ? WHERE id = ?').run(description, req.params.id);
+  }
+  if (is_public !== undefined) {
+    db.prepare('UPDATE playlists SET is_public = ? WHERE id = ?').run(is_public ? 1 : 0, req.params.id);
+  }
+
+  const playlist = db.prepare('SELECT * FROM playlists WHERE id = ?').get(req.params.id);
+  res.json(playlist);
+});
+
+router.post('/:id/cover', requireAuth, playlistCoverUpload.single('cover'), (req, res) => {
+  if (!ownsPlaylist(req.params.id, req.session.userId)) {
+    return res.status(403).json({ error: 'Only the playlist owner can change its cover.' });
+  }
+  if (!req.file) return res.status(400).json({ error: 'No image was uploaded.' });
+
+  const coverPath = `/uploads/playlist-covers/${req.file.filename}`;
+  db.prepare('UPDATE playlists SET cover_path = ? WHERE id = ?').run(coverPath, req.params.id);
+  res.json({ cover_path: coverPath });
 });
 
 router.delete('/:id', requireAuth, (req, res) => {

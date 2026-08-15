@@ -31,6 +31,10 @@ export async function renderProfile(app, params) {
       </div>
     </div>
     <div class="browse-header">
+      <h2>Playlists</h2>
+    </div>
+    <div id="playlist-row" class="playlist-grid playlist-grid--compact"></div>
+    <div class="browse-header">
       <h2>Tracks</h2>
       <div id="view-toggle" class="view-toggle"></div>
     </div>
@@ -51,6 +55,31 @@ export async function renderProfile(app, params) {
     actionsEl.innerHTML = '<a href="#/edit-profile" class="pill-btn">Edit profile</a>';
   } else if (authState.user) {
     renderFriendAction(actionsEl, user);
+  }
+
+  const playlistRow = document.getElementById('playlist-row');
+  if (!user.playlists.length) {
+    playlistRow.previousElementSibling.classList.add('hidden');
+    playlistRow.classList.add('hidden');
+  } else {
+    user.playlists.forEach((playlist) => {
+      const card = document.createElement('a');
+      card.className = 'playlist-card';
+      card.href = `#/playlists/${playlist.id}`;
+      card.innerHTML = `
+        <div class="playlist-card-icon" style="${playlist.cover_path ? `background-image:url(${escapeHtml(playlist.cover_path)})` : ''}">
+          ${
+            playlist.cover_path
+              ? ''
+              : '<svg viewBox="0 0 24 24"><path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/></svg>'
+          }
+        </div>
+        <div class="playlist-card-name"></div>
+        <div class="playlist-card-count">${playlist.track_count} track${playlist.track_count === 1 ? '' : 's'}${isMe && !playlist.is_public ? ' · Private' : ''}</div>
+      `;
+      card.querySelector('.playlist-card-name').textContent = playlist.name;
+      playlistRow.appendChild(card);
+    });
   }
 
   const grid = document.getElementById('track-grid');

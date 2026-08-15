@@ -12,8 +12,8 @@
   --danger: #d9634a;
   --border: #3a342c;
 
-  --font-display: 'Big Shoulders Display', sans-serif;
-  --font-body: 'IBM Plex Sans', -apple-system, sans-serif;
+  --font-display: 'Montserrat', sans-serif;
+  --font-body: 'Montserrat', -apple-system, sans-serif;
   --font-mono: 'IBM Plex Mono', monospace;
 }
 
@@ -631,4 +631,133 @@ button { font-family: inherit; cursor: pointer; }
   #player-canvas { display: none; }
 
   .modal-box { padding: 18px; max-width: 100%; }
+}
+
+/* --- Additions: genre visibility, source badges, public/private, playlist covers, edit panel, embeds --- */
+
+.track-genre {
+  background: var(--surface-raised);
+  padding: 2px 8px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.track-genre--empty {
+  background: none;
+  padding: 2px 0;
+  color: var(--text-dim);
+  opacity: 0.6;
+  text-transform: none;
+  letter-spacing: normal;
+  font-style: italic;
+}
+
+.track-source-badge {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 10px;
+  color: var(--bg);
+  font-weight: 600;
+}
+.track-source-badge--youtube { background: #ff5c5c; }
+.track-source-badge--soundcloud { background: var(--accent); }
+.track-list .track-source-badge { bottom: auto; top: 2px; left: 2px; font-size: 8px; padding: 1px 5px; }
+
+.inline-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.inline-checkbox input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+
+.inline-form--wrap { flex-wrap: wrap; max-width: none; }
+.inline-form--wrap input[type="text"] { flex: 1 1 220px; }
+
+.source-toggle { display: flex; gap: 8px; margin-bottom: 20px; }
+.source-toggle-btn {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.source-toggle-btn.is-active { border-color: var(--accent); color: var(--text); background: var(--surface-raised); }
+
+/* Playlist covers + compact grid used on profile/search */
+.playlist-card-icon {
+  width: 48px; height: 48px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  background-color: var(--surface-raised);
+  background-size: cover;
+  background-position: center;
+  display: flex; align-items: center; justify-content: center;
+}
+.playlist-header-icon {
+  background-size: cover;
+  background-position: center;
+}
+.playlist-grid--compact { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); margin-top: 16px; margin-bottom: 8px; }
+.playlist-card-owner { color: var(--accent); }
+
+.playlist-description { color: var(--text-dim); font-size: 14px; margin: 10px 0 0; max-width: 60ch; }
+
+/* Owner edit panel on a playlist page */
+.edit-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 24px;
+  max-width: 440px;
+}
+.edit-panel label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-dim); }
+.edit-panel input[type="text"], .edit-panel textarea, .edit-panel input[type="file"] {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 9px 11px;
+  border-radius: 4px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  resize: vertical;
+}
+.edit-panel-actions { display: flex; gap: 10px; }
+.edit-panel-actions button[type="submit"] {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  padding: 9px 18px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.edit-panel-actions button[type="submit"]:hover { background: var(--accent-dim); }
+
+/* Embed modal for linked (YouTube/SoundCloud) tracks */
+.modal-box--embed { max-width: 480px; }
+.embed-source-label { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); margin: -8px 0 16px; }
+.embed-frame-wrap { border-radius: 6px; overflow: hidden; margin-bottom: 16px; background: var(--bg); }
+.embed-frame-wrap iframe { width: 100%; border: none; display: block; }
+.embed-frame-wrap--youtube iframe { aspect-ratio: 16 / 9; height: auto; }
+.embed-frame-wrap--soundcloud iframe { height: 166px; }
+
+@media (max-width: 720px) {
+  .source-toggle { flex-direction: column; }
 }

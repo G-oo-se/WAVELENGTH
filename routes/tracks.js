@@ -4,6 +4,8 @@ const fs = require('fs');
 const db = require('../db/database');
 const { trackUpload } = require('../middleware/upload');
 const { requireAuth } = require('../middleware/auth');
+const { uploadsDir } = require('../config');
+const { resolveExternalTrack, tryFetchSoundCloudThumbnail } = require('../lib/externalTrack');
 
 const router = express.Router();
 
@@ -23,7 +25,15 @@ function withLikedByMe(track, viewerId) {
   return { ...track, liked_by_me: !!row };
 }
 
-// GET /api/tracks?search=&genre=&sort=newest|popular
+// A path is only safe to unlink if it's actually one of ours — cover_path
+// can be an external thumbnail URL (e.g. YouTube's) for linked tracks.
+function unlinkIfLocal(relativePath) {
+  if (!relativePath || !relativePath.startsWith('/uploads/')) return;
+  const absolutePath = path.join(uploadsDir, relativePath.replace(/^\/uploads\//, ''));
+  fs.unlink(absolutePath, () => {});
+}
+
+// GET /api/tracks?search=&genre=&sort=newest|popular — search now covers genre too
 router.get('/', (req, res) => {
   const { search = '', genre = '', sort = 'newest' } = req.query;
 
@@ -31,8 +41,8 @@ router.get('/', (req, res) => {
   const params = [];
 
   if (search) {
-    query += ' AND (tracks.title LIKE ? OR tracks.artist LIKE ?)';
-    params.push(`%${search}%`, `%${search}%`);
+    query += ' AND (tracks.title LIKE ? OR tracks.artist LIKE ? OR tracks.genre LIKE ?)';
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
   if (genre) {
     query += ' AND tracks.genre = ?';
@@ -45,8 +55,6 @@ router.get('/', (req, res) => {
   res.json(tracks.map((t) => withLikedByMe(t, req.session.userId)));
 });
 
-// GET /api/tracks/liked — tracks the current user has liked. Must be
-// registered before /:id or Express would treat "liked" as an id.
 router.get('/liked', requireAuth, (req, res) => {
   const tracks = db
     .prepare(
@@ -65,6 +73,9 @@ router.get('/:id', (req, res) => {
   res.json(withLikedByMe(track, req.session.userId));
 });
 
+// POST /api/tracks — either a multipart file upload (existing "audio" field)
+// or a pasted "external_url" (YouTube/SoundCloud). Same endpoint either way
+// so the frontend just sends whichever one applies.
 router.post(
   '/',
   requireAuth,
@@ -72,24 +83,51 @@ router.post(
     { name: 'audio', maxCount: 1 },
     { name: 'cover', maxCount: 1 }
   ]),
-  (req, res) => {
-    const { title, artist, genre = '', description = '', duration = 0 } = req.body;
+  async (req, res) => {
+    const { title, artist, genre = '', description = '', duration = 0, external_url = '' } = req.body;
     const audioFile = req.files?.audio?.[0];
     const coverFile = req.files?.cover?.[0];
 
-    if (!title || !artist || !audioFile) {
-      return res.status(400).json({ error: 'Title, artist, and an audio file are required.' });
+    if (!title || !artist) {
+      return res.status(400).json({ error: 'Title and artist are required.' });
     }
 
-    const audioPath = `/uploads/audio/${audioFile.filename}`;
-    const coverPath = coverFile ? `/uploads/covers/${coverFile.filename}` : null;
+    let audioPath = '';
+    let coverPath = coverFile ? `/uploads/covers/${coverFile.filename}` : null;
+    let sourceType = 'upload';
+    let externalUrl = null;
+    let embedUrl = null;
+    let trackDuration = Number(duration) || 0;
+
+    if (external_url) {
+      const resolved = resolveExternalTrack(external_url);
+      if (!resolved) {
+        return res.status(400).json({ error: "That doesn't look like a YouTube or SoundCloud link." });
+      }
+      sourceType = resolved.sourceType;
+      externalUrl = resolved.externalUrl;
+      embedUrl = resolved.embedUrl;
+      trackDuration = 0; // not available without extra API calls; omitted rather than guessed
+
+      if (!coverPath && resolved.thumbnailUrl) {
+        coverPath = resolved.thumbnailUrl;
+      } else if (!coverPath && sourceType === 'soundcloud') {
+        // Best-effort only — if this fails or times out, the track still saves fine.
+        coverPath = await tryFetchSoundCloudThumbnail(externalUrl);
+      }
+    } else if (audioFile) {
+      audioPath = `/uploads/audio/${audioFile.filename}`;
+    } else {
+      return res.status(400).json({ error: 'Upload an audio file or paste a YouTube/SoundCloud link.' });
+    }
 
     const info = db
       .prepare(
-        `INSERT INTO tracks (user_id, title, artist, genre, description, audio_path, cover_path, duration)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO tracks
+           (user_id, title, artist, genre, description, audio_path, cover_path, duration, source_type, external_url, embed_url)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(req.session.userId, title, artist, genre, description, audioPath, coverPath, Number(duration) || 0);
+      .run(req.session.userId, title, artist, genre, description, audioPath, coverPath, trackDuration, sourceType, externalUrl, embedUrl);
 
     const track = db.prepare(`${TRACK_SELECT} WHERE tracks.id = ?`).get(info.lastInsertRowid);
     res.status(201).json(withLikedByMe(track, req.session.userId));
@@ -130,12 +168,8 @@ router.delete('/:id', requireAuth, (req, res) => {
   }
 
   db.prepare('DELETE FROM tracks WHERE id = ?').run(req.params.id);
-
-  const uploadsRoot = path.join(__dirname, '..', 'uploads');
-  [track.audio_path, track.cover_path].filter(Boolean).forEach((relativePath) => {
-    const absolutePath = path.join(uploadsRoot, relativePath.replace(/^\/uploads\//, ''));
-    fs.unlink(absolutePath, () => {});
-  });
+  unlinkIfLocal(track.audio_path);
+  unlinkIfLocal(track.cover_path);
 
   res.json({ ok: true });
 });

@@ -41,9 +41,11 @@ export const api = {
   removeFriend: (username) => request('DELETE', `/api/users/${username}/friend`),
 
   getPlaylists: () => request('GET', '/api/playlists'),
-  createPlaylist: (name) => request('POST', '/api/playlists', { name }),
+  searchPlaylists: (q) => request('GET', `/api/playlists/search?q=${encodeURIComponent(q)}`),
+  createPlaylist: (payload) => request('POST', '/api/playlists', payload),
   getPlaylist: (id) => request('GET', `/api/playlists/${id}`),
-  renamePlaylist: (id, name) => request('PATCH', `/api/playlists/${id}`, { name }),
+  updatePlaylist: (id, payload) => request('PATCH', `/api/playlists/${id}`, payload),
+  updatePlaylistCover: (id, formData) => request('POST', `/api/playlists/${id}/cover`, formData, true),
   deletePlaylist: (id) => request('DELETE', `/api/playlists/${id}`),
   addTrackToPlaylist: (playlistId, trackId) => request('POST', `/api/playlists/${playlistId}/tracks`, { track_id: trackId }),
   removeTrackFromPlaylist: (playlistId, trackId) => request('DELETE', `/api/playlists/${playlistId}/tracks/${trackId}`),

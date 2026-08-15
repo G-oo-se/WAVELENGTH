@@ -1,8 +1,8 @@
-const path = require('path');
 const fs = require('fs');
+const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
+const { dataDir } = require('../config');
 
-const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 const db = new DatabaseSync(path.join(dataDir, 'wavelength.db'));
@@ -28,10 +28,13 @@ db.exec(`
     artist TEXT NOT NULL,
     genre TEXT DEFAULT '',
     description TEXT DEFAULT '',
-    audio_path TEXT NOT NULL,
+    audio_path TEXT NOT NULL DEFAULT '',
     cover_path TEXT,
     duration REAL DEFAULT 0,
     play_count INTEGER DEFAULT 0,
+    source_type TEXT NOT NULL DEFAULT 'upload',
+    external_url TEXT,
+    embed_url TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -46,6 +49,9 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    cover_path TEXT,
+    is_public INTEGER NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -70,12 +76,20 @@ db.exec(`
 
 // Lightweight migrations for anyone who already has a database file from an
 // earlier version of this project.
-const userColumns = db.prepare('PRAGMA table_info(users)').all();
-if (!userColumns.some((col) => col.name === 'is_admin')) {
-  db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
+function addColumnIfMissing(table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!columns.some((col) => col.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
 }
-if (!userColumns.some((col) => col.name === 'avatar_path')) {
-  db.exec('ALTER TABLE users ADD COLUMN avatar_path TEXT');
-}
+
+addColumnIfMissing('users', 'is_admin', 'INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('users', 'avatar_path', 'TEXT');
+addColumnIfMissing('tracks', 'source_type', "TEXT NOT NULL DEFAULT 'upload'");
+addColumnIfMissing('tracks', 'external_url', 'TEXT');
+addColumnIfMissing('tracks', 'embed_url', 'TEXT');
+addColumnIfMissing('playlists', 'description', "TEXT DEFAULT ''");
+addColumnIfMissing('playlists', 'cover_path', 'TEXT');
+addColumnIfMissing('playlists', 'is_public', 'INTEGER NOT NULL DEFAULT 0');
 
 module.exports = db;

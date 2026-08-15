@@ -4,6 +4,7 @@ const fs = require('fs');
 const db = require('../db/database');
 const { avatarUpload } = require('../middleware/upload');
 const { requireAuth } = require('../middleware/auth');
+const { uploadsDir } = require('../config');
 
 const router = express.Router();
 
@@ -20,8 +21,6 @@ function friendStatusBetween(viewerId, otherUserId) {
   return row.requester_id === viewerId ? 'request_sent' : 'request_received';
 }
 
-// GET /api/users/me/friends — accepted friends + pending requests, both directions.
-// Registered before /:username so "me" here never gets treated as a username.
 router.get('/me/friends', requireAuth, (req, res) => {
   const uid = req.session.userId;
 
@@ -53,16 +52,14 @@ router.get('/me/friends', requireAuth, (req, res) => {
   res.json({ friends, incoming, outgoing });
 });
 
-// POST /api/users/me — update your own bio and/or avatar (multipart so both
-// can travel in one request).
 router.post('/me', requireAuth, avatarUpload.single('avatar'), (req, res) => {
   const { bio } = req.body;
   const avatarFile = req.file;
 
   if (avatarFile) {
     const existing = db.prepare('SELECT avatar_path FROM users WHERE id = ?').get(req.session.userId);
-    if (existing?.avatar_path) {
-      const oldAbsolute = path.join(__dirname, '..', 'uploads', existing.avatar_path.replace(/^\/uploads\//, ''));
+    if (existing?.avatar_path && existing.avatar_path.startsWith('/uploads/')) {
+      const oldAbsolute = path.join(uploadsDir, existing.avatar_path.replace(/^\/uploads\//, ''));
       fs.unlink(oldAbsolute, () => {});
     }
     const avatarPath = `/uploads/avatars/${avatarFile.filename}`;
@@ -80,12 +77,16 @@ router.post('/me', requireAuth, avatarUpload.single('avatar'), (req, res) => {
   res.json(user);
 });
 
-// GET /api/users/:username — public profile + their tracks
+// GET /api/users/:username — public profile: tracks + playlists (public
+// ones for everyone, plus your own private ones when it's your own profile).
 router.get('/:username', (req, res) => {
   const user = db
     .prepare('SELECT id, username, bio, avatar_path, is_admin, created_at FROM users WHERE username = ?')
     .get(req.params.username);
   if (!user) return res.status(404).json({ error: 'User not found.' });
+
+  const viewerId = req.session.userId;
+  const isOwnProfile = viewerId === user.id;
 
   const tracks = db
     .prepare(
@@ -95,11 +96,19 @@ router.get('/:username', (req, res) => {
     )
     .all(user.username, user.avatar_path, user.id);
 
-  const viewerId = req.session.userId;
   const tracksWithLikes = tracks.map((t) => ({
     ...t,
     liked_by_me: viewerId ? !!db.prepare('SELECT 1 FROM likes WHERE user_id = ? AND track_id = ?').get(viewerId, t.id) : false
   }));
+
+  const playlistsQuery = isOwnProfile
+    ? `SELECT playlists.*, COUNT(playlist_tracks.id) AS track_count
+       FROM playlists LEFT JOIN playlist_tracks ON playlist_tracks.playlist_id = playlists.id
+       WHERE playlists.user_id = ? GROUP BY playlists.id ORDER BY playlists.created_at DESC`
+    : `SELECT playlists.*, COUNT(playlist_tracks.id) AS track_count
+       FROM playlists LEFT JOIN playlist_tracks ON playlist_tracks.playlist_id = playlists.id
+       WHERE playlists.user_id = ? AND playlists.is_public = 1 GROUP BY playlists.id ORDER BY playlists.created_at DESC`;
+  const playlists = db.prepare(playlistsQuery).all(user.id);
 
   const friendCount = db
     .prepare(
@@ -111,7 +120,8 @@ router.get('/:username', (req, res) => {
     ...user,
     friend_count: friendCount,
     friend_status: friendStatusBetween(viewerId, user.id),
-    tracks: tracksWithLikes
+    tracks: tracksWithLikes,
+    playlists
   });
 });
 
@@ -152,8 +162,6 @@ router.post('/:username/friend-accept', requireAuth, (req, res) => {
   res.json({ status: 'friends' });
 });
 
-// Cancels an outgoing request, declines an incoming one, or unfriends —
-// all the same underlying operation: delete whatever row connects the two.
 router.delete('/:username/friend', requireAuth, (req, res) => {
   const target = db.prepare('SELECT id FROM users WHERE username = ?').get(req.params.username);
   if (!target) return res.status(404).json({ error: 'User not found.' });

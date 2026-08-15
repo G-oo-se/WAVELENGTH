@@ -1,4 +1,5 @@
 import { playQueue } from './player.js';
+import { openEmbedModal } from './embedModal.js';
 import { escapeHtml } from './utils.js';
 import { authState } from './state.js';
 import { api } from './api.js';
@@ -11,12 +12,17 @@ function formatDuration(seconds) {
   return `${m}:${s}`;
 }
 
+const SOURCE_LABELS = { youtube: 'YouTube', soundcloud: 'SoundCloud' };
+
 // contextTracks + index let next/prev in the player move through whatever
 // list this card is part of (search results, a profile, a playlist).
+// Linked (YouTube/SoundCloud) tracks never join that queue — they always
+// open in their own embedded player instead.
 export function createTrackCard(track, contextTracks, index) {
   const card = document.createElement('article');
   card.className = 'track-card';
 
+  const isLinked = track.source_type === 'youtube' || track.source_type === 'soundcloud';
   const initial = escapeHtml(track.title.charAt(0).toUpperCase());
   const title = escapeHtml(track.title);
   const artist = escapeHtml(track.artist);
@@ -30,6 +36,11 @@ export function createTrackCard(track, contextTracks, index) {
       <button class="track-play-btn" aria-label="Play ${title}">
         <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
       </button>
+      ${
+        isLinked
+          ? `<span class="track-source-badge track-source-badge--${track.source_type}">${SOURCE_LABELS[track.source_type]}</span>`
+          : ''
+      }
       ${
         canDelete
           ? `<button class="track-delete-btn" aria-label="Delete ${title}" title="Delete track">
@@ -52,7 +63,7 @@ export function createTrackCard(track, contextTracks, index) {
           : `<div class="track-artist track-artist--static"><span>${artist}</span></div>`
       }
       <div class="track-meta">
-        ${track.genre ? `<span class="track-genre">${genre}</span>` : ''}
+        <span class="track-genre ${track.genre ? '' : 'track-genre--empty'}">${genre || 'No genre set'}</span>
         <span class="track-plays">${track.play_count} plays</span>
       </div>
       <div class="track-actions">
@@ -68,8 +79,13 @@ export function createTrackCard(track, contextTracks, index) {
   `;
 
   card.querySelector('.track-play-btn').addEventListener('click', () => {
-    if (contextTracks) playQueue(contextTracks, index);
-    else playQueue([track], 0);
+    if (isLinked) {
+      openEmbedModal(track);
+    } else if (contextTracks) {
+      playQueue(contextTracks, index);
+    } else {
+      playQueue([track], 0);
+    }
   });
 
   const likeBtn = card.querySelector('.track-like-btn');

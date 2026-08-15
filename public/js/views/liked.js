@@ -1,5 +1,6 @@
 import { api } from '../api.js';
 import { createTrackCard } from '../components.js';
+import { renderViewToggle, getViewMode } from '../viewToggle.js';
 
 export async function renderLiked(app) {
   const user = await api.me().catch(() => null);
@@ -9,11 +10,20 @@ export async function renderLiked(app) {
   }
 
   app.innerHTML = `
-    <div class="browse-header"><h1>Liked tracks</h1></div>
+    <div class="browse-header">
+      <h1>Liked tracks</h1>
+      <div id="view-toggle" class="view-toggle"></div>
+    </div>
     <div id="track-grid" class="track-grid"><p class="loading">Loading…</p></div>
   `;
 
   const grid = document.getElementById('track-grid');
+  function applyViewMode(mode) {
+    grid.classList.toggle('track-list', mode === 'list');
+  }
+  renderViewToggle(document.getElementById('view-toggle'), applyViewMode);
+  applyViewMode(getViewMode());
+
   try {
     const tracks = await api.getLikedTracks();
     if (!tracks.length) {

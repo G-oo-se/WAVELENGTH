@@ -3,6 +3,7 @@ import { createTrackCard } from '../components.js';
 import { playQueue, toggleShuffle } from '../player.js';
 import { navigate } from '../router.js';
 import { escapeHtml } from '../utils.js';
+import { renderViewToggle, getViewMode } from '../viewToggle.js';
 
 export async function renderPlaylist(app, params) {
   app.innerHTML = '<p class="loading">Loading playlist…</p>';
@@ -46,12 +47,21 @@ function renderShell(app, playlist) {
       }
     </div>
     <div id="edit-panel-slot"></div>
+    <div class="browse-header">
+      <h2>Tracks</h2>
+      <div id="view-toggle" class="view-toggle"></div>
+    </div>
     <div id="track-list" class="track-grid"></div>
   `;
 
   fillHeader(app, playlist);
 
   const grid = document.getElementById('track-list');
+  function applyViewMode(mode) {
+    grid.classList.toggle('track-list', mode === 'list');
+  }
+  renderViewToggle(document.getElementById('view-toggle'), applyViewMode);
+  applyViewMode(getViewMode());
   if (!playlist.tracks.length) {
     grid.innerHTML = '<p class="empty-state">No tracks in this playlist yet — add some from the browse page.</p>';
   } else {

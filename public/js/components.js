@@ -12,6 +12,10 @@ function formatDuration(seconds) {
   return `${m}:${s}`;
 }
 
+function sanitizeForFilename(str) {
+  return str.replace(/[/\\:*?"<>|]/g, '').trim() || 'track';
+}
+
 const SOURCE_LABELS = { youtube: 'YouTube', soundcloud: 'SoundCloud' };
 
 // contextTracks + index let next/prev in the player move through whatever
@@ -30,6 +34,30 @@ export function createTrackCard(track, contextTracks, index) {
   const user = authState.user;
   const canDelete = !!user && (user.is_admin || user.id === track.user_id);
 
+  // The delete button exists twice — once overlaid on the cover (grid
+  // view, where there's room) and once inline with the other action
+  // buttons (list view, where the cover is too small to host it without
+  // overlapping the play button). CSS shows exactly one at a time.
+  const deleteBtnCover = canDelete
+    ? `<button class="track-delete-btn" aria-label="Delete ${title}" title="Delete track">
+         <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+       </button>`
+    : '';
+  const deleteBtnInline = canDelete
+    ? `<button class="track-delete-btn-inline" aria-label="Delete ${title}" title="Delete track">
+         <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+       </button>`
+    : '';
+
+  const ext = !isLinked && track.audio_path ? track.audio_path.split('.').pop() : '';
+  const downloadFilename = `${sanitizeForFilename(track.artist)} - ${sanitizeForFilename(track.title)}.${ext}`;
+  const downloadBtn =
+    !isLinked && track.audio_path
+      ? `<a class="track-download-btn" href="${escapeHtml(track.audio_path)}" download="${escapeHtml(downloadFilename)}" aria-label="Download ${title}" title="Download">
+           <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+         </a>`
+      : '';
+
   card.innerHTML = `
     <div class="track-cover" style="${track.cover_path ? `background-image:url(${escapeHtml(track.cover_path)})` : ''}">
       ${track.cover_path ? '' : initial}
@@ -41,13 +69,7 @@ export function createTrackCard(track, contextTracks, index) {
           ? `<span class="track-source-badge track-source-badge--${track.source_type}">${SOURCE_LABELS[track.source_type]}</span>`
           : ''
       }
-      ${
-        canDelete
-          ? `<button class="track-delete-btn" aria-label="Delete ${title}" title="Delete track">
-               <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-             </button>`
-          : ''
-      }
+      ${deleteBtnCover}
     </div>
     <div class="track-info">
       <div class="track-title-row">
@@ -74,6 +96,8 @@ export function createTrackCard(track, contextTracks, index) {
         <button class="track-add-btn" aria-label="Add ${title} to playlist" title="Add to playlist">
           <svg viewBox="0 0 24 24"><path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/></svg>
         </button>
+        ${downloadBtn}
+        ${deleteBtnInline}
       </div>
     </div>
   `;
@@ -116,9 +140,13 @@ export function createTrackCard(track, contextTracks, index) {
     openPlaylistPicker(track.id);
   });
 
-  const deleteBtn = card.querySelector('.track-delete-btn');
-  if (deleteBtn) {
-    deleteBtn.addEventListener('click', async (e) => {
+  const downloadEl = card.querySelector('.track-download-btn');
+  if (downloadEl) {
+    downloadEl.addEventListener('click', (e) => e.stopPropagation());
+  }
+
+  if (canDelete) {
+    const handleDelete = async (e) => {
       e.stopPropagation();
       if (!confirm(`Delete "${track.title}"? This can't be undone.`)) return;
       try {
@@ -131,7 +159,9 @@ export function createTrackCard(track, contextTracks, index) {
       } catch (err) {
         alert(err.message);
       }
-    });
+    };
+    card.querySelector('.track-delete-btn').addEventListener('click', handleDelete);
+    card.querySelector('.track-delete-btn-inline').addEventListener('click', handleDelete);
   }
 
   return card;

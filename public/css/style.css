@@ -761,3 +761,33 @@ button { font-family: inherit; cursor: pointer; }
 @media (max-width: 720px) {
   .source-toggle { flex-direction: column; }
 }
+
+/* --- Additions: download button, delete button repositioning for list view --- */
+
+.track-download-btn {
+  display: flex; align-items: center; gap: 4px;
+  background: none; border: none;
+  color: var(--text-dim);
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+.track-download-btn:hover { color: var(--accent); background: var(--surface-raised); }
+.track-download-btn svg { width: 15px; height: 15px; fill: currentColor; }
+
+/* Inline delete (list view) — hidden by default, shown only in list mode.
+   The cover-overlay delete (grid view) is hidden in list mode instead,
+   so exactly one is visible at a time and they never overlap the play button. */
+.track-delete-btn-inline {
+  display: none;
+  align-items: center;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+.track-delete-btn-inline:hover { color: var(--danger); background: var(--surface-raised); }
+.track-delete-btn-inline svg { width: 15px; height: 15px; fill: currentColor; }
+
+.track-list .track-delete-btn { display: none; }
+.track-list .track-delete-btn-inline { display: flex; }

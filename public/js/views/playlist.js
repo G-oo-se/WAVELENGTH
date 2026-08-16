@@ -1,9 +1,11 @@
 import { api } from '../api.js';
 import { createTrackCard } from '../components.js';
-import { playQueue, toggleShuffle } from '../player.js';
+import { playQueue, toggleShuffle, setRepeatMode } from '../player.js';
 import { navigate } from '../router.js';
 import { escapeHtml } from '../utils.js';
 import { renderViewToggle, getViewMode } from '../viewToggle.js';
+import { renderGenreFilterControl } from '../genrePicker.js';
+import { enableDragReorder } from '../dragReorder.js';
 
 export async function renderPlaylist(app, params) {
   app.innerHTML = '<p class="loading">Loading playlist…</p>';
@@ -51,23 +53,54 @@ function renderShell(app, playlist) {
       <h2>Tracks</h2>
       <div id="view-toggle" class="view-toggle"></div>
     </div>
+    <div id="genre-filter" class="genre-filter-control"></div>
+    <p id="reorder-hint" class="reorder-hint hidden">Switch to list view to drag and reorder tracks. (Reordering is only available when no genre filter is active.)</p>
     <div id="track-list" class="track-grid"></div>
   `;
 
   fillHeader(app, playlist);
 
   const grid = document.getElementById('track-list');
+  const reorderHint = document.getElementById('reorder-hint');
+  let viewMode = getViewMode();
+  const selectedGenres = new Set();
+
   function applyViewMode(mode) {
+    viewMode = mode;
     grid.classList.toggle('track-list', mode === 'list');
+    renderTracks();
   }
   renderViewToggle(document.getElementById('view-toggle'), applyViewMode);
-  applyViewMode(getViewMode());
-  if (!playlist.tracks.length) {
-    grid.innerHTML = '<p class="empty-state">No tracks in this playlist yet — add some from the browse page.</p>';
-  } else {
-    playlist.tracks.forEach((track, i) => {
-      const card = createTrackCard(track, playlist.tracks, i);
+  grid.classList.toggle('track-list', viewMode === 'list');
+
+  function renderTracks() {
+    const filtered = selectedGenres.size
+      ? playlist.tracks.filter((t) => Array.from(selectedGenres).every((g) => t.genres.includes(g)))
+      : playlist.tracks;
+
+    if (!filtered.length) {
+      grid.innerHTML = playlist.tracks.length
+        ? '<p class="empty-state">No tracks match that.</p>'
+        : '<p class="empty-state">No tracks in this playlist yet — add some from the browse page.</p>';
+      reorderHint.classList.add('hidden');
+      return;
+    }
+
+    grid.innerHTML = '';
+    const canReorder = playlist.is_owner && viewMode === 'list' && !selectedGenres.size;
+
+    filtered.forEach((track, i) => {
+      const card = createTrackCard(track, filtered, i);
       if (playlist.is_owner) {
+        if (canReorder) {
+          const handle = document.createElement('button');
+          handle.type = 'button';
+          handle.className = 'track-drag-handle';
+          handle.setAttribute('aria-label', 'Drag to reorder');
+          handle.innerHTML =
+            '<svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>';
+          card.insertBefore(handle, card.firstChild);
+        }
         const removeBtn = document.createElement('button');
         removeBtn.type = 'button';
         removeBtn.className = 'playlist-remove-btn';
@@ -75,7 +108,8 @@ function renderShell(app, playlist) {
         removeBtn.addEventListener('click', async () => {
           try {
             await api.removeTrackFromPlaylist(playlist.id, track.id);
-            card.remove();
+            playlist.tracks = playlist.tracks.filter((t) => t.id !== track.id);
+            renderTracks();
           } catch (err) {
             alert(err.message);
           }
@@ -84,16 +118,39 @@ function renderShell(app, playlist) {
       }
       grid.appendChild(card);
     });
+
+    if (canReorder) enableDragReorder(grid, playlist.id);
+
+    if (playlist.is_owner && !canReorder) {
+      reorderHint.textContent =
+        viewMode !== 'list'
+          ? 'Switch to list view to drag and reorder tracks.'
+          : 'Clear the genre filter to drag and reorder tracks.';
+      reorderHint.classList.remove('hidden');
+    } else {
+      reorderHint.classList.add('hidden');
+    }
   }
 
+  renderGenreFilterControl(document.getElementById('genre-filter'), selectedGenres, renderTracks);
+  renderTracks();
+
   document.getElementById('play-all-btn').addEventListener('click', () => {
-    const playable = playlist.tracks.filter((t) => t.source_type === 'upload' || !t.source_type);
-    if (playable.length) playQueue(playable, 0);
-  });
-  document.getElementById('shuffle-play-btn').addEventListener('click', () => {
-    const playable = playlist.tracks.filter((t) => t.source_type === 'upload' || !t.source_type);
+    const source = selectedGenres.size ? playlist.tracks.filter((t) => Array.from(selectedGenres).every((g) => t.genres.includes(g))) : playlist.tracks;
+    const playable = source.filter((t) => t.source_type === 'upload' || !t.source_type);
     if (!playable.length) return;
     playQueue(playable, 0);
+    // A playlist is meant to keep going once you press play on it — loop
+    // back to the start when it ends, rather than just stopping. The
+    // repeat button in the player bar can still turn this off manually.
+    setRepeatMode('all');
+  });
+  document.getElementById('shuffle-play-btn').addEventListener('click', () => {
+    const source = selectedGenres.size ? playlist.tracks.filter((t) => Array.from(selectedGenres).every((g) => t.genres.includes(g))) : playlist.tracks;
+    const playable = source.filter((t) => t.source_type === 'upload' || !t.source_type);
+    if (!playable.length) return;
+    playQueue(playable, 0);
+    setRepeatMode('all');
     toggleShuffle();
   });
 

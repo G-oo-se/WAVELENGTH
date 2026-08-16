@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { navigate } from '../router.js';
 import { escapeHtml } from '../utils.js';
+import { renderGenrePills } from '../genrePicker.js';
 
 export async function renderUpload(app) {
   const user = await api.me().catch(() => null);
@@ -23,8 +24,8 @@ export async function renderUpload(app) {
         <label>Artist
           <input name="artist" type="text" required maxlength="120" value="${escapeHtml(user.username)}">
         </label>
-        <label>Genre
-          <input name="genre" type="text" maxlength="40" placeholder="e.g. lo-fi, indie rock, ambient">
+        <label>Genres <span class="field-hint">(pick any that fit)</span>
+          <div id="genre-picker" class="genre-picker"></div>
         </label>
         <label>Description
           <textarea name="description" rows="3" maxlength="500"></textarea>
@@ -53,6 +54,9 @@ export async function renderUpload(app) {
   const submitBtn = document.getElementById('upload-submit');
   let mode = 'upload';
   let duration = 0;
+  const selectedGenres = new Set();
+
+  renderGenrePills(document.getElementById('genre-picker'), selectedGenres, () => {});
 
   document.querySelectorAll('.source-toggle-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -92,6 +96,7 @@ export async function renderUpload(app) {
     submitBtn.textContent = 'Adding…';
 
     const formData = new FormData(form);
+    selectedGenres.forEach((g) => formData.append('genre', g));
     if (mode === 'upload') {
       formData.set('duration', duration || 0);
       formData.delete('external_url');

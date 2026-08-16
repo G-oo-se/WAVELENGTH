@@ -71,7 +71,7 @@ export function openPlaylistPicker(trackId) {
     const name = input.value.trim();
     if (!name) return;
     try {
-      const playlist = await api.createPlaylist(name);
+      const playlist = await api.createPlaylist({ name });
       await api.addTrackToPlaylist(playlist.id, trackId);
       input.value = '';
       loadPlaylists();

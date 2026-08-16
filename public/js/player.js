@@ -75,20 +75,27 @@ function drawVisualizer() {
   }
 }
 
-function shuffledIndices(length, keepFirst) {
+function shuffledIndices(length, { keepFirst, avoidFirst } = {}) {
   const indices = Array.from({ length }, (_, i) => i);
   for (let i = indices.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [indices[i], indices[j]] = [indices[j], indices[i]];
   }
-  // Keep whatever is currently playing at the front, so turning shuffle on
-  // mid-track doesn't immediately yank you to a different song.
   if (keepFirst != null) {
+    // Keep whatever is currently playing at the front, so turning shuffle
+    // on mid-track doesn't immediately yank you to a different song.
     const pos = indices.indexOf(keepFirst);
     if (pos > 0) {
       indices.splice(pos, 1);
       indices.unshift(keepFirst);
     }
+  } else if (avoidFirst != null && length > 1 && indices[0] === avoidFirst) {
+    // A shuffled playlist reshuffles when it loops back to the start —
+    // make sure that reshuffle never happens to put the track that JUST
+    // finished back in first place, so shuffle mode never repeats a track
+    // back-to-back across the loop boundary.
+    const swapWith = 1 + Math.floor(Math.random() * (length - 1));
+    [indices[0], indices[swapWith]] = [indices[swapWith], indices[0]];
   }
   return indices;
 }
@@ -132,7 +139,7 @@ function playCurrent() {
 export function playQueue(tracks, startIndex = 0) {
   queue = tracks;
   queueIndex = startIndex;
-  if (shuffleOn) shuffleOrder = shuffledIndices(queue.length, queueIndex);
+  if (shuffleOn) shuffleOrder = shuffledIndices(queue.length, { keepFirst: queueIndex });
   playCurrent();
 }
 
@@ -162,7 +169,7 @@ function advance(direction) {
   } else if (nextPos >= order.length) {
     if (repeatMode === 'all') {
       nextPos = 0;
-      if (shuffleOn) shuffleOrder = shuffledIndices(queue.length, null);
+      if (shuffleOn) shuffleOrder = shuffledIndices(queue.length, { avoidFirst: queueIndex });
     } else {
       return;
     }
@@ -187,15 +194,27 @@ export function playPrevious() {
 
 export function toggleShuffle() {
   shuffleOn = !shuffleOn;
-  if (shuffleOn) shuffleOrder = shuffledIndices(queue.length, queueIndex);
+  if (shuffleOn) shuffleOrder = shuffledIndices(queue.length, { keepFirst: queueIndex });
   shuffleBtn.classList.toggle('is-active', shuffleOn);
+}
+
+function applyRepeatButtonState() {
+  repeatBtn.classList.remove('is-active', 'is-active-one');
+  if (repeatMode === 'all') repeatBtn.classList.add('is-active');
+  if (repeatMode === 'one') repeatBtn.classList.add('is-active', 'is-active-one');
 }
 
 export function cycleRepeat() {
   repeatMode = repeatMode === 'off' ? 'all' : repeatMode === 'all' ? 'one' : 'off';
-  repeatBtn.classList.remove('is-active', 'is-active-one');
-  if (repeatMode === 'all') repeatBtn.classList.add('is-active');
-  if (repeatMode === 'one') repeatBtn.classList.add('is-active', 'is-active-one');
+  applyRepeatButtonState();
+}
+
+// Sets repeat mode directly. Used by a playlist's "Play all" / "Shuffle
+// play" buttons, which default to looping when they start playback — the
+// whole point of pressing play on a playlist is that it keeps going.
+export function setRepeatMode(mode) {
+  repeatMode = mode;
+  applyRepeatButtonState();
 }
 
 export function getCurrentTrack() {

@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { searchState } from '../state.js';
 import { createTrackCard } from '../components.js';
 import { renderViewToggle, getViewMode } from '../viewToggle.js';
+import { renderGenreFilterControl } from '../genrePicker.js';
 import { escapeHtml } from '../utils.js';
 
 export async function renderBrowse(app) {
@@ -20,6 +21,7 @@ export async function renderBrowse(app) {
         </select>
       </div>
     </div>
+    <div id="genre-filter" class="genre-filter-control"></div>
     <div id="track-grid" class="track-grid"><p class="loading">Loading tracks…</p></div>
   `;
 
@@ -27,6 +29,7 @@ export async function renderBrowse(app) {
   const sortSelect = document.getElementById('sort-select');
   const playlistResults = document.getElementById('playlist-results');
   const playlistResultsGrid = document.getElementById('playlist-results-grid');
+  const selectedGenres = new Set();
 
   function applyViewMode(mode) {
     grid.classList.toggle('track-list', mode === 'list');
@@ -74,11 +77,11 @@ export async function renderBrowse(app) {
   async function load() {
     grid.innerHTML = '<p class="loading">Loading tracks…</p>';
     try {
-      const tracks = await api.getTracks({ search: searchState.query, sort: sortSelect.value });
+      const tracks = await api.getTracks({ search: searchState.query, sort: sortSelect.value, genres: Array.from(selectedGenres) });
       grid.innerHTML = '';
       if (!tracks.length) {
-        grid.innerHTML = searchState.query
-          ? '<p class="empty-state">No tracks match that search.</p>'
+        grid.innerHTML = searchState.query || selectedGenres.size
+          ? '<p class="empty-state">No tracks match that.</p>'
           : '<p class="empty-state">No tracks yet. Be the first to add one.</p>';
         return;
       }
@@ -90,6 +93,7 @@ export async function renderBrowse(app) {
   }
 
   sortSelect.addEventListener('change', load);
+  renderGenreFilterControl(document.getElementById('genre-filter'), selectedGenres, load);
   load();
   loadPlaylistResults();
 }

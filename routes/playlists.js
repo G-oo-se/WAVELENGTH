@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db/database');
 const { requireAuth } = require('../middleware/auth');
 const { playlistCoverUpload } = require('../middleware/upload');
+const { attachGenres, GENRES_SUBQUERY } = require('../lib/genres');
 
 const router = express.Router();
 
@@ -77,7 +78,8 @@ router.get('/:id', (req, res) => {
   const tracks = db
     .prepare(
       `SELECT tracks.*, users.username AS artist_username, users.avatar_path AS artist_avatar,
-              (SELECT COUNT(*) FROM likes WHERE likes.track_id = tracks.id) AS like_count
+              (SELECT COUNT(*) FROM likes WHERE likes.track_id = tracks.id) AS like_count,
+              ${GENRES_SUBQUERY}
        FROM playlist_tracks
        JOIN tracks ON tracks.id = playlist_tracks.track_id
        JOIN users ON users.id = tracks.user_id
@@ -89,10 +91,13 @@ router.get('/:id', (req, res) => {
   res.json({
     ...playlist,
     is_owner: isOwner,
-    tracks: tracks.map((t) => ({
-      ...t,
-      liked_by_me: viewerId ? !!db.prepare('SELECT 1 FROM likes WHERE user_id = ? AND track_id = ?').get(viewerId, t.id) : false
-    }))
+    tracks: tracks.map((t) => {
+      const withGenres = attachGenres(t);
+      return {
+        ...withGenres,
+        liked_by_me: viewerId ? !!db.prepare('SELECT 1 FROM likes WHERE user_id = ? AND track_id = ?').get(viewerId, t.id) : false
+      };
+    })
   });
 });
 
@@ -135,6 +140,41 @@ router.delete('/:id', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'Only the playlist owner can delete it.' });
   }
   db.prepare('DELETE FROM playlists WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+router.patch('/:id/reorder', requireAuth, (req, res) => {
+  if (!ownsPlaylist(req.params.id, req.session.userId)) {
+    return res.status(403).json({ error: 'Only the playlist owner can reorder it.' });
+  }
+  const { track_ids } = req.body;
+  if (!Array.isArray(track_ids) || !track_ids.length) {
+    return res.status(400).json({ error: 'track_ids must be a non-empty array.' });
+  }
+
+  const currentIds = db
+    .prepare('SELECT track_id FROM playlist_tracks WHERE playlist_id = ?')
+    .all(req.params.id)
+    .map((r) => r.track_id);
+  const submittedIds = track_ids.map(Number);
+  const sortedCurrent = [...currentIds].sort((a, b) => a - b);
+  const sortedSubmitted = [...submittedIds].sort((a, b) => a - b);
+  if (JSON.stringify(sortedCurrent) !== JSON.stringify(sortedSubmitted)) {
+    return res.status(400).json({ error: "The submitted order doesn't match this playlist's current tracks." });
+  }
+
+  const update = db.prepare('UPDATE playlist_tracks SET position = ? WHERE playlist_id = ? AND track_id = ?');
+  db.exec('BEGIN');
+  try {
+    submittedIds.forEach((trackId, index) => {
+      update.run(index, req.params.id, trackId);
+    });
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
   res.json({ ok: true });
 });
 

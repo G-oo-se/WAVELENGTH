@@ -21,9 +21,12 @@ async function request(method, url, body, isFormData = false) {
 
 export const api = {
   getTracks: (params = {}) => {
-    const cleaned = Object.fromEntries(Object.entries(params).filter(([, v]) => v));
-    const qs = new URLSearchParams(cleaned).toString();
-    return request('GET', `/api/tracks${qs ? `?${qs}` : ''}`);
+    const qs = new URLSearchParams();
+    if (params.search) qs.set('search', params.search);
+    if (params.sort) qs.set('sort', params.sort);
+    (params.genres || []).forEach((g) => qs.append('genre', g));
+    const query = qs.toString();
+    return request('GET', `/api/tracks${query ? `?${query}` : ''}`);
   },
   getLikedTracks: () => request('GET', '/api/tracks/liked'),
   getTrack: (id) => request('GET', `/api/tracks/${id}`),
@@ -46,9 +49,12 @@ export const api = {
   getPlaylist: (id) => request('GET', `/api/playlists/${id}`),
   updatePlaylist: (id, payload) => request('PATCH', `/api/playlists/${id}`, payload),
   updatePlaylistCover: (id, formData) => request('POST', `/api/playlists/${id}/cover`, formData, true),
+  reorderPlaylist: (id, trackIds) => request('PATCH', `/api/playlists/${id}/reorder`, { track_ids: trackIds }),
   deletePlaylist: (id) => request('DELETE', `/api/playlists/${id}`),
   addTrackToPlaylist: (playlistId, trackId) => request('POST', `/api/playlists/${playlistId}/tracks`, { track_id: trackId }),
   removeTrackFromPlaylist: (playlistId, trackId) => request('DELETE', `/api/playlists/${playlistId}/tracks/${trackId}`),
+
+  getGenres: () => request('GET', '/api/genres'),
 
   register: (payload) => request('POST', '/api/auth/register', payload),
   login: (payload) => request('POST', '/api/auth/login', payload),

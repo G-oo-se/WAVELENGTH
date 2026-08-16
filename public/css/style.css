@@ -268,7 +268,7 @@ button { font-family: inherit; cursor: pointer; }
 .track-artist { display: flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: 13px; margin-top: 4px; }
 .track-artist-avatar { width: 16px; height: 16px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
 .track-artist--static { color: var(--text-dim); }
-.track-meta { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
+.track-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 8px; font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
 .track-genre { background: var(--surface-raised); padding: 2px 8px; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.03em; }
 
 .track-actions { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
@@ -791,3 +791,147 @@ button { font-family: inherit; cursor: pointer; }
 
 .track-list .track-delete-btn { display: none; }
 .track-list .track-delete-btn-inline { display: flex; }
+
+/* --- Additions: multi-select genre picker (upload + collapsible filter), drag-to-reorder, copy-link button --- */
+
+.genre-pill {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 6px 14px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-family: var(--font-body);
+  white-space: nowrap;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.genre-pill:hover { border-color: var(--accent-dim); color: var(--text); }
+/* Selected state is color-only on purpose — no padding, border-width, or
+   font-weight change, so a pill never resizes and never shoves its
+   neighbors around in the flex-wrap row when toggled. */
+.genre-pill.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+
+/* Upload page: always-visible picker, a bit roomier than the filter panel */
+.genre-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
+}
+.genre-picker .genre-pill { padding: 8px 16px; font-size: 13px; }
+.field-hint { color: var(--text-dim); font-weight: 400; font-size: 12px; }
+
+/* Browse/Liked/Playlist/Profile: collapsed behind a toggle button */
+.genre-filter-control { position: relative; margin-bottom: 22px; display: inline-block; }
+.filter-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 9px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-family: var(--font-body);
+}
+.filter-toggle-btn:hover { border-color: var(--accent-dim); }
+.filter-toggle-btn svg { width: 16px; height: 16px; fill: var(--text-dim); }
+.filter-count-badge {
+  background: var(--accent);
+  color: var(--bg);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+}
+.genre-picker-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 15;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  width: min(420px, 90vw);
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.reorder-hint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: -12px 0 16px;
+}
+
+/* Drag-to-reorder (list view only) */
+.track-drag-handle {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  padding: 4px;
+  margin-right: 2px;
+  cursor: grab;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.track-drag-handle:hover { color: var(--text); }
+.track-drag-handle svg { width: 16px; height: 16px; fill: currentColor; }
+.track-card:active .track-drag-handle { cursor: grabbing; }
+.track-card.is-dragging { opacity: 0.4; }
+.track-list .track-card { cursor: default; }
+
+.track-copy-btn {
+  display: flex; align-items: center;
+  background: none; border: none;
+  color: var(--text-dim);
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+.track-copy-btn:hover { color: var(--text); background: var(--surface-raised); }
+.track-copy-btn svg { width: 15px; height: 15px; fill: currentColor; }
+.track-copy-btn.is-copied { color: var(--accent); }
+
+/* --- Additions: "+N" genre overflow toggle and its floating popover --- */
+
+.track-genre-more {
+  background: var(--surface-raised);
+  border: 1px dashed var(--border);
+  color: var(--text-dim);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.track-genre-more:hover { border-color: var(--accent); color: var(--text); }
+
+.genre-popover {
+  position: fixed;
+  z-index: 60;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  max-width: 240px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}

@@ -17,6 +17,50 @@ function sanitizeForFilename(str) {
 }
 
 const SOURCE_LABELS = { youtube: 'YouTube', soundcloud: 'SoundCloud' };
+const MAX_VISIBLE_GENRES = 2;
+
+// Caps how many genre pills render inline so a track with many genres can
+// never overflow/get clipped by the card. Extra genres go behind a "+N"
+// toggle that opens a floating popover (see openGenrePopover) rather than
+// pushing the card's own layout around.
+function renderGenreTags(genres) {
+  if (!genres || !genres.length) {
+    return '<span class="track-genre track-genre--empty">No genre set</span>';
+  }
+  const visible = genres.slice(0, MAX_VISIBLE_GENRES);
+  const hiddenCount = genres.length - visible.length;
+  const visibleHtml = visible.map((g) => `<span class="track-genre">${escapeHtml(g)}</span>`).join('');
+  if (!hiddenCount) return visibleHtml;
+  return `${visibleHtml}<button type="button" class="track-genre-more" data-all-genres="${escapeHtml(genres.join('||'))}">+${hiddenCount}</button>`;
+}
+
+let openPopover = null;
+function closeGenrePopover() {
+  if (openPopover) {
+    openPopover.remove();
+    openPopover = null;
+  }
+}
+document.addEventListener('click', (e) => {
+  if (openPopover && !openPopover.contains(e.target) && !e.target.closest('.track-genre-more')) {
+    closeGenrePopover();
+  }
+});
+
+// Appended to document.body (not the card) so it's never clipped by the
+// card's own overflow:hidden, and positioned via the button's actual
+// on-screen location rather than assuming where it sits in the layout.
+function openGenrePopover(anchorBtn, genres) {
+  closeGenrePopover();
+  const rect = anchorBtn.getBoundingClientRect();
+  const popover = document.createElement('div');
+  popover.className = 'genre-popover';
+  popover.innerHTML = genres.map((g) => `<span class="track-genre">${escapeHtml(g)}</span>`).join('');
+  popover.style.top = `${rect.bottom + 6}px`;
+  popover.style.left = `${Math.min(rect.left, window.innerWidth - 260)}px`;
+  document.body.appendChild(popover);
+  openPopover = popover;
+}
 
 // contextTracks + index let next/prev in the player move through whatever
 // list this card is part of (search results, a profile, a playlist).
@@ -25,12 +69,12 @@ const SOURCE_LABELS = { youtube: 'YouTube', soundcloud: 'SoundCloud' };
 export function createTrackCard(track, contextTracks, index) {
   const card = document.createElement('article');
   card.className = 'track-card';
+  card.dataset.trackId = track.id;
 
   const isLinked = track.source_type === 'youtube' || track.source_type === 'soundcloud';
   const initial = escapeHtml(track.title.charAt(0).toUpperCase());
   const title = escapeHtml(track.title);
   const artist = escapeHtml(track.artist);
-  const genre = escapeHtml(track.genre);
   const user = authState.user;
   const canDelete = !!user && (user.is_admin || user.id === track.user_id);
 
@@ -57,6 +101,12 @@ export function createTrackCard(track, contextTracks, index) {
            <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
          </a>`
       : '';
+  const copyLinkBtn = isLinked
+    ? `<button class="track-copy-btn" aria-label="Copy link to ${title}" title="Copy link">
+         <svg class="icon-copy" viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+         <svg class="icon-check hidden" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+       </button>`
+    : '';
 
   card.innerHTML = `
     <div class="track-cover" style="${track.cover_path ? `background-image:url(${escapeHtml(track.cover_path)})` : ''}">
@@ -85,7 +135,7 @@ export function createTrackCard(track, contextTracks, index) {
           : `<div class="track-artist track-artist--static"><span>${artist}</span></div>`
       }
       <div class="track-meta">
-        <span class="track-genre ${track.genre ? '' : 'track-genre--empty'}">${genre || 'No genre set'}</span>
+        ${renderGenreTags(track.genres)}
         <span class="track-plays">${track.play_count} plays</span>
       </div>
       <div class="track-actions">
@@ -97,6 +147,7 @@ export function createTrackCard(track, contextTracks, index) {
           <svg viewBox="0 0 24 24"><path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/></svg>
         </button>
         ${downloadBtn}
+        ${copyLinkBtn}
         ${deleteBtnInline}
       </div>
     </div>
@@ -140,9 +191,37 @@ export function createTrackCard(track, contextTracks, index) {
     openPlaylistPicker(track.id);
   });
 
+  const genreMoreBtn = card.querySelector('.track-genre-more');
+  if (genreMoreBtn) {
+    genreMoreBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openGenrePopover(genreMoreBtn, genreMoreBtn.dataset.allGenres.split('||'));
+    });
+  }
+
   const downloadEl = card.querySelector('.track-download-btn');
   if (downloadEl) {
     downloadEl.addEventListener('click', (e) => e.stopPropagation());
+  }
+
+  const copyBtn = card.querySelector('.track-copy-btn');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        await navigator.clipboard.writeText(track.external_url);
+        copyBtn.classList.add('is-copied');
+        copyBtn.querySelector('.icon-copy').classList.add('hidden');
+        copyBtn.querySelector('.icon-check').classList.remove('hidden');
+        setTimeout(() => {
+          copyBtn.classList.remove('is-copied');
+          copyBtn.querySelector('.icon-copy').classList.remove('hidden');
+          copyBtn.querySelector('.icon-check').classList.add('hidden');
+        }, 1500);
+      } catch {
+        alert("Couldn't copy automatically — here's the link:\n\n" + track.external_url);
+      }
+    });
   }
 
   if (canDelete) {

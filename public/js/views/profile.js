@@ -3,6 +3,7 @@ import { createTrackCard } from '../components.js';
 import { escapeHtml } from '../utils.js';
 import { authState } from '../state.js';
 import { renderViewToggle, getViewMode } from '../viewToggle.js';
+import { renderGenreFilterControl } from '../genrePicker.js';
 
 export async function renderProfile(app, params) {
   app.innerHTML = '<p class="loading">Loading profile…</p>';
@@ -38,6 +39,7 @@ export async function renderProfile(app, params) {
       <h2>Tracks</h2>
       <div id="view-toggle" class="view-toggle"></div>
     </div>
+    <div id="genre-filter" class="genre-filter-control"></div>
     <div id="track-grid" class="track-grid"></div>
   `;
 
@@ -89,11 +91,22 @@ export async function renderProfile(app, params) {
   renderViewToggle(document.getElementById('view-toggle'), applyViewMode);
   applyViewMode(getViewMode());
 
-  if (!user.tracks.length) {
-    grid.innerHTML = '<p class="empty-state">No tracks uploaded yet.</p>';
-  } else {
-    user.tracks.forEach((track, i) => grid.appendChild(createTrackCard(track, user.tracks, i)));
+  const selectedGenres = new Set();
+  function renderTracks() {
+    const filtered = selectedGenres.size
+      ? user.tracks.filter((t) => Array.from(selectedGenres).every((g) => t.genres.includes(g)))
+      : user.tracks;
+    if (!filtered.length) {
+      grid.innerHTML = user.tracks.length
+        ? '<p class="empty-state">No tracks match that.</p>'
+        : '<p class="empty-state">No tracks uploaded yet.</p>';
+      return;
+    }
+    grid.innerHTML = '';
+    filtered.forEach((track, i) => grid.appendChild(createTrackCard(track, filtered, i)));
   }
+  renderGenreFilterControl(document.getElementById('genre-filter'), selectedGenres, renderTracks);
+  renderTracks();
 }
 
 function renderFriendAction(container, user) {

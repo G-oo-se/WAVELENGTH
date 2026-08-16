@@ -74,6 +74,29 @@ db.exec(`
   );
 `);
 
+// A track can now have several genres, so genres live in their own table
+// rather than the old single tracks.genre column (still present on disk,
+// but no longer written to — see the migration below).
+const hadTrackGenres = !!db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'track_genres'").get();
+if (!hadTrackGenres) {
+  db.exec(`
+    CREATE TABLE track_genres (
+      track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+      genre TEXT NOT NULL,
+      PRIMARY KEY (track_id, genre)
+    );
+  `);
+
+  // One-time migration: carry forward anyone's existing single genre value,
+  // as long as it's still one of the predefined options.
+  const { GENRES } = require('../lib/genres');
+  const oldGenres = db.prepare("SELECT id, genre FROM tracks WHERE genre IS NOT NULL AND genre != ''").all();
+  const insertGenre = db.prepare('INSERT OR IGNORE INTO track_genres (track_id, genre) VALUES (?, ?)');
+  oldGenres.forEach(({ id, genre }) => {
+    if (GENRES.includes(genre)) insertGenre.run(id, genre);
+  });
+}
+
 // Lightweight migrations for anyone who already has a database file from an
 // earlier version of this project.
 function addColumnIfMissing(table, column, definition) {

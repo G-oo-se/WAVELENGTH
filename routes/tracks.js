@@ -6,6 +6,7 @@ const { trackUpload } = require('../middleware/upload');
 const { requireAuth } = require('../middleware/auth');
 const { uploadsDir } = require('../config');
 const { resolveExternalTrack, tryFetchSoundCloudThumbnail } = require('../lib/externalTrack');
+const { GENRES, attachGenres, GENRES_SUBQUERY } = require('../lib/genres');
 
 const router = express.Router();
 
@@ -14,7 +15,8 @@ const TRACK_SELECT = `
     tracks.*,
     users.username AS artist_username,
     users.avatar_path AS artist_avatar,
-    (SELECT COUNT(*) FROM likes WHERE likes.track_id = tracks.id) AS like_count
+    (SELECT COUNT(*) FROM likes WHERE likes.track_id = tracks.id) AS like_count,
+    ${GENRES_SUBQUERY}
   FROM tracks
   JOIN users ON tracks.user_id = users.id
 `;
@@ -25,6 +27,10 @@ function withLikedByMe(track, viewerId) {
   return { ...track, liked_by_me: !!row };
 }
 
+function finalize(track, viewerId) {
+  return withLikedByMe(attachGenres(track), viewerId);
+}
+
 // A path is only safe to unlink if it's actually one of ours — cover_path
 // can be an external thumbnail URL (e.g. YouTube's) for linked tracks.
 function unlinkIfLocal(relativePath) {
@@ -33,28 +39,43 @@ function unlinkIfLocal(relativePath) {
   fs.unlink(absolutePath, () => {});
 }
 
-// GET /api/tracks?search=&genre=&sort=newest|popular — search now covers genre too
+// GET /api/tracks?search=&genre=Jazz&genre=Funk&sort=newest|popular
+// Multiple ?genre= params match tracks with ANY of those genres.
 router.get('/', (req, res) => {
-  const { search = '', genre = '', sort = 'newest' } = req.query;
+  const { search = '', sort = 'newest' } = req.query;
+  const genreFilter = req.query.genre ? [].concat(req.query.genre) : [];
 
   let query = `${TRACK_SELECT} WHERE 1 = 1`;
   const params = [];
 
   if (search) {
-    query += ' AND (tracks.title LIKE ? OR tracks.artist LIKE ? OR tracks.genre LIKE ?)';
+    query += ` AND (
+      tracks.title LIKE ? OR tracks.artist LIKE ? OR EXISTS (
+        SELECT 1 FROM track_genres WHERE track_genres.track_id = tracks.id AND track_genres.genre LIKE ?
+      )
+    )`;
     params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
-  if (genre) {
-    query += ' AND tracks.genre = ?';
-    params.push(genre);
+
+  if (genreFilter.length) {
+    // Match tracks that have ALL selected genres, not just any one of them
+    // — count how many of the selected genres this track actually has,
+    // and require that to equal the number selected.
+    const placeholders = genreFilter.map(() => '?').join(', ');
+    query += ` AND (
+      SELECT COUNT(DISTINCT track_genres.genre) FROM track_genres
+      WHERE track_genres.track_id = tracks.id AND track_genres.genre IN (${placeholders})
+    ) = ?`;
+    params.push(...genreFilter, genreFilter.length);
   }
 
   query += sort === 'popular' ? ' ORDER BY tracks.play_count DESC' : ' ORDER BY tracks.created_at DESC';
 
   const tracks = db.prepare(query).all(...params);
-  res.json(tracks.map((t) => withLikedByMe(t, req.session.userId)));
+  res.json(tracks.map((t) => finalize(t, req.session.userId)));
 });
 
+// GET /api/tracks/liked — must be registered before /:id.
 router.get('/liked', requireAuth, (req, res) => {
   const tracks = db
     .prepare(
@@ -64,18 +85,18 @@ router.get('/liked', requireAuth, (req, res) => {
        ORDER BY likes.created_at DESC`
     )
     .all(req.session.userId);
-  res.json(tracks.map((t) => withLikedByMe(t, req.session.userId)));
+  res.json(tracks.map((t) => finalize(t, req.session.userId)));
 });
 
 router.get('/:id', (req, res) => {
   const track = db.prepare(`${TRACK_SELECT} WHERE tracks.id = ?`).get(req.params.id);
   if (!track) return res.status(404).json({ error: 'Track not found.' });
-  res.json(withLikedByMe(track, req.session.userId));
+  res.json(finalize(track, req.session.userId));
 });
 
 // POST /api/tracks — either a multipart file upload (existing "audio" field)
-// or a pasted "external_url" (YouTube/SoundCloud). Same endpoint either way
-// so the frontend just sends whichever one applies.
+// or a pasted "external_url" (YouTube/SoundCloud). One or more "genre"
+// fields select from the predefined list (all optional).
 router.post(
   '/',
   requireAuth,
@@ -84,12 +105,17 @@ router.post(
     { name: 'cover', maxCount: 1 }
   ]),
   async (req, res) => {
-    const { title, artist, genre = '', description = '', duration = 0, external_url = '' } = req.body;
+    const { title, artist, description = '', duration = 0, external_url = '' } = req.body;
     const audioFile = req.files?.audio?.[0];
     const coverFile = req.files?.cover?.[0];
 
     if (!title || !artist) {
       return res.status(400).json({ error: 'Title and artist are required.' });
+    }
+
+    const genres = req.body.genre ? [...new Set([].concat(req.body.genre))] : [];
+    if (genres.some((g) => !GENRES.includes(g))) {
+      return res.status(400).json({ error: 'One or more selected genres are not valid options.' });
     }
 
     let audioPath = '';
@@ -124,13 +150,18 @@ router.post(
     const info = db
       .prepare(
         `INSERT INTO tracks
-           (user_id, title, artist, genre, description, audio_path, cover_path, duration, source_type, external_url, embed_url)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           (user_id, title, artist, description, audio_path, cover_path, duration, source_type, external_url, embed_url)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(req.session.userId, title, artist, genre, description, audioPath, coverPath, trackDuration, sourceType, externalUrl, embedUrl);
+      .run(req.session.userId, title, artist, description, audioPath, coverPath, trackDuration, sourceType, externalUrl, embedUrl);
+
+    if (genres.length) {
+      const insertGenre = db.prepare('INSERT INTO track_genres (track_id, genre) VALUES (?, ?)');
+      genres.forEach((g) => insertGenre.run(info.lastInsertRowid, g));
+    }
 
     const track = db.prepare(`${TRACK_SELECT} WHERE tracks.id = ?`).get(info.lastInsertRowid);
-    res.status(201).json(withLikedByMe(track, req.session.userId));
+    res.status(201).json(finalize(track, req.session.userId));
   }
 );
 

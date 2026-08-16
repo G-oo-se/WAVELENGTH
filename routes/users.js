@@ -5,6 +5,7 @@ const db = require('../db/database');
 const { avatarUpload } = require('../middleware/upload');
 const { requireAuth } = require('../middleware/auth');
 const { uploadsDir } = require('../config');
+const { attachGenres, GENRES_SUBQUERY } = require('../lib/genres');
 
 const router = express.Router();
 
@@ -91,15 +92,19 @@ router.get('/:username', (req, res) => {
   const tracks = db
     .prepare(
       `SELECT tracks.*, ? AS artist_username, ? AS artist_avatar,
-              (SELECT COUNT(*) FROM likes WHERE likes.track_id = tracks.id) AS like_count
+              (SELECT COUNT(*) FROM likes WHERE likes.track_id = tracks.id) AS like_count,
+              ${GENRES_SUBQUERY}
        FROM tracks WHERE user_id = ? ORDER BY created_at DESC`
     )
     .all(user.username, user.avatar_path, user.id);
 
-  const tracksWithLikes = tracks.map((t) => ({
-    ...t,
-    liked_by_me: viewerId ? !!db.prepare('SELECT 1 FROM likes WHERE user_id = ? AND track_id = ?').get(viewerId, t.id) : false
-  }));
+  const tracksWithLikes = tracks.map((t) => {
+    const withGenres = attachGenres(t);
+    return {
+      ...withGenres,
+      liked_by_me: viewerId ? !!db.prepare('SELECT 1 FROM likes WHERE user_id = ? AND track_id = ?').get(viewerId, t.id) : false
+    };
+  });
 
   const playlistsQuery = isOwnProfile
     ? `SELECT playlists.*, COUNT(playlist_tracks.id) AS track_count
